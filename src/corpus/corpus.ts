@@ -39,6 +39,8 @@ interface CorpusPlugin {
   blockersBefore?: number;
   blockersAfter?: number;
   regionRisks?: number;
+  /** Set when no release supports the server's MC version — appended to failure notes. */
+  mcGapNote?: string;
   status:
     | "pending"
     | "native"
@@ -74,15 +76,38 @@ async function searchTopPlugins(count: number): Promise<CorpusPlugin[]> {
   return out.slice(0, count);
 }
 
-async function downloadLatest(p: CorpusPlugin, dir: string): Promise<void> {
+/** The server's Minecraft version, from the Folia jar name (e.g. "folia-26.1.2-8.jar"). */
+function serverMcVersion(): string | null {
+  try {
+    const jar = fs.readdirSync(FOLIA_DIR).find((f) => f.endsWith(".jar"));
+    return jar?.match(/-(\d+(?:\.\d+)+)/)?.[1] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function downloadLatest(p: CorpusPlugin, dir: string, serverMc: string | null): Promise<void> {
   const versions = await apiJson<
-    { version_number: string; loaders: string[]; files: { url: string; filename: string; primary: boolean }[] }[]
+    {
+      version_number: string;
+      loaders: string[];
+      game_versions?: string[];
+      files: { url: string; filename: string; primary: boolean }[];
+    }[]
   >(`${API}/project/${p.slug}/version?loaders=${encodeURIComponent('["paper","spigot","bukkit","folia"]')}`);
-  const latest = versions[0];
+  // Prefer the newest release that declares the server's MC version; only fall
+  // back to the plain newest when none does — and then remember the gap, so a
+  // failure isn't blamed on Folia when the build predates this MC version.
+  const matching = serverMc ? versions.find((v) => v.game_versions?.includes(serverMc)) : undefined;
+  const latest = matching ?? versions[0];
   if (!latest) {
     p.status = "download-failed";
     p.note = "no bukkit/paper version on Modrinth";
     return;
+  }
+  if (!matching && serverMc) {
+    const newest = latest.game_versions?.at(-1);
+    p.mcGapNote = `no build for MC ${serverMc} exists (newest targets ${newest ?? "unknown"}) — may fail on plain Paper too`;
   }
   p.versionNumber = latest.version_number;
   if (latest.loaders.includes("folia")) {
@@ -187,13 +212,15 @@ export async function runCorpus(options: CorpusOptions): Promise<void> {
 
   console.log(`Fetching top ${options.count} Paper/Spigot plugins from Modrinth…`);
   const plugins = await searchTopPlugins(options.count);
+  const serverMc = serverMcVersion();
 
   // 1. Download (skipping native-Folia releases).
   for (const [i, p] of plugins.entries()) {
     process.stdout.write(`[${i + 1}/${plugins.length}] ${p.title} … `);
     try {
-      await downloadLatest(p, dir);
-      console.log(p.status === "pending" ? path.basename(p.file!) : p.note);
+      await downloadLatest(p, dir, serverMc);
+      const gap = p.mcGapNote ? ` (⚠ ${p.mcGapNote})` : "";
+      console.log(p.status === "pending" ? path.basename(p.file!) + gap : p.note);
     } catch (e) {
       p.status = "download-failed";
       p.note = e instanceof Error ? e.message : String(e);
@@ -279,7 +306,9 @@ export async function runCorpus(options: CorpusOptions): Promise<void> {
   for (const p of [...plugins].sort((a, b) => a.title.localeCompare(b.title))) {
     if (p.status === "native" || p.status === "not-a-plugin" || p.status === "download-failed") continue;
     const result = ROW_ICON[p.status] ?? p.status;
-    rows.push(`| ${p.title} | ${p.versionNumber ?? "?"} | ${result} | ${p.note.replaceAll("|", "/")} |`);
+    const failed = p.status === "boot-issues" || p.status === "boot-fail" || p.status === "convert-failed";
+    const note = p.note + (failed && p.mcGapNote ? ` — ${p.mcGapNote}` : "");
+    rows.push(`| ${p.title} | ${p.versionNumber ?? "?"} | ${result} | ${note.replaceAll("|", "/")} |`);
   }
   const natives = plugins.filter((p) => p.status === "native").map((p) => p.title);
   const md = [

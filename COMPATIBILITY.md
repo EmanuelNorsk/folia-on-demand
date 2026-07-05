@@ -51,8 +51,8 @@ Most rows below come from a sweep of the top 60 Paper/Spigot plugins on Modrinth
 
 | Plugin | Version tested | Result | Notes |
 |---|---|---|---|
-| Dynmap | 3.7-beta-8 | ❌ needs author update | boots, but its NMS-reflection layer does not recognize Folia (`Cannot find net.minecraft.server.BiomeBase`), so map rendering fails |
-| FastAsyncWorldEdit | 2.15.2 | ❌ needs author update | its own boot banner says this FAWE build does not support this Minecraft version — it fails identically on plain Paper; not a Folia/conversion issue |
+| Dynmap | 3.7-beta-8 | ❌ needs author update | **no Dynmap build for this MC generation exists** — the newest release (Jan 2025) ships version helpers up to MC 1.21.4 only, so it cannot render on plain Paper of this version either. Use BlueMap (converts clean, above). |
+| FastAsyncWorldEdit | 2.15.2 | ❌ needs author update | the build does target this MC version on Paper, but FAWE does not support Folia upstream — its NMS adapter layer fails to bind (block-type cache crash, "empty chests/signs" banner). Its own async chunk engine conflicts with Folia's region ownership; use WorldEdit (Folia-native, below). |
 | WolfyUtilities | 4.17-beta.1 | ❌ needs author update | uses legacy NMS (versioned CraftBukkit package + per-version NMS adapters). Would fail on plain modern Paper too — not a Folia/conversion issue. AI Repair fixed its version parsing, but it ships no NMS adapter for modern Minecraft. |
 | CustomCrafting | 4.17-beta.5 | ❌ blocked | hard-depends on WolfyUtilities (above) |
 
