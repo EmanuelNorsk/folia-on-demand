@@ -4,6 +4,7 @@ import io.papermc.paper.threadedregions.scheduler.EntityScheduler;
 import io.papermc.paper.threadedregions.scheduler.GlobalRegionScheduler;
 import io.papermc.paper.threadedregions.scheduler.RegionScheduler;
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
+import org.bukkit.GameRule;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.Server;
@@ -15,12 +16,14 @@ import org.bukkit.entity.ExperienceOrb;
 import org.bukkit.entity.FishHook;
 import org.bukkit.entity.HumanEntity;
 import org.bukkit.entity.LivingEntity;
+import org.bukkit.entity.SpawnCategory;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.InventoryView;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.Merchant;
+import org.bukkit.metadata.MetadataValue;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
@@ -542,6 +545,93 @@ public final class Shim {
             return server.dispatchCommand(sender, commandLine);
         }
         ShimCore.ownScheduler().runNextTick(task -> server.dispatchCommand(sender, commandLine));
+        return true;
+    }
+
+    // ===== World settings that require the global region thread =====
+    // Folia guards these CraftWorld setters with "Cannot modify server settings
+    // off of the global region". Plugins apply them from onEnable (the init
+    // thread owns no region) or from region threads. Fire-and-forget deferral
+    // to the global region preserves intent; boolean returns are optimistic.
+
+    private static void onGlobal(Runnable action) {
+        if (!ShimCore.FOLIA || ShimCore.ownScheduler().isGlobalTickThread()) {
+            action.run();
+        } else {
+            ShimCore.ownScheduler().runNextTick(task -> action.run());
+        }
+    }
+
+    public static void setHardcore(World world, boolean hardcore) {
+        onGlobal(() -> world.setHardcore(hardcore));
+    }
+
+    /** CraftWorld.setPVP delegates to the guarded setGameRule internally. */
+    public static void setPVP(World world, boolean pvp) {
+        onGlobal(() -> world.setPVP(pvp));
+    }
+
+    public static void setTime(World world, long time) {
+        onGlobal(() -> world.setTime(time));
+    }
+
+    public static void setFullTime(World world, long time) {
+        onGlobal(() -> world.setFullTime(time));
+    }
+
+    public static void setStorm(World world, boolean hasStorm) {
+        onGlobal(() -> world.setStorm(hasStorm));
+    }
+
+    public static void setWeatherDuration(World world, int duration) {
+        onGlobal(() -> world.setWeatherDuration(duration));
+    }
+
+    public static void setThundering(World world, boolean thundering) {
+        onGlobal(() -> world.setThundering(thundering));
+    }
+
+    public static void setThunderDuration(World world, int duration) {
+        onGlobal(() -> world.setThunderDuration(duration));
+    }
+
+    public static void setClearWeatherDuration(World world, int duration) {
+        onGlobal(() -> world.setClearWeatherDuration(duration));
+    }
+
+    public static void setChunkForceLoaded(World world, int x, int z, boolean forced) {
+        onGlobal(() -> world.setChunkForceLoaded(x, z, forced));
+    }
+
+    public static void setMetadata(World world, String key, MetadataValue value) {
+        onGlobal(() -> world.setMetadata(key, value));
+    }
+
+    public static void removeMetadata(World world, String key, Plugin owningPlugin) {
+        onGlobal(() -> world.removeMetadata(key, owningPlugin));
+    }
+
+    public static void setTicksPerSpawns(World world, SpawnCategory category, int ticks) {
+        onGlobal(() -> world.setTicksPerSpawns(category, ticks));
+    }
+
+    public static void setSpawnLimit(World world, SpawnCategory category, int limit) {
+        onGlobal(() -> world.setSpawnLimit(category, limit));
+    }
+
+    public static boolean setGameRuleValue(World world, String rule, String value) {
+        if (!ShimCore.FOLIA || ShimCore.ownScheduler().isGlobalTickThread()) {
+            return world.setGameRuleValue(rule, value);
+        }
+        ShimCore.ownScheduler().runNextTick(task -> world.setGameRuleValue(rule, value));
+        return true;
+    }
+
+    public static <T> boolean setGameRule(World world, GameRule<T> rule, T newValue) {
+        if (!ShimCore.FOLIA || ShimCore.ownScheduler().isGlobalTickThread()) {
+            return world.setGameRule(rule, newValue);
+        }
+        ShimCore.ownScheduler().runNextTick(task -> world.setGameRule(rule, newValue));
         return true;
     }
 
